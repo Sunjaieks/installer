@@ -62,6 +62,34 @@ rem Windows Command Prompt
 Note that `npm` keeps its own CA list and ignores the OS trust store, so it needs
 `NODE_EXTRA_CA_CERTS` even after the OS store is fixed.
 
+### When the download itself fails
+
+The settings above are read *by* the script, so they cannot help if the proxy blocks the
+download of the script in the first place — that fails before any of this code runs, with
+`SEC_E_UNTRUSTED_ROOT` or "Could not establish trust relationship". The fetch needs its own
+bypass, chained with the setting that carries it through to the Node.js download and npm:
+
+```powershell
+# Windows PowerShell
+[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; $env:CLOUDCLI_INSECURE='1'; irm https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.ps1 | iex
+
+# afterwards, put verification back for the rest of the session
+[Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+```
+
+```bat
+rem Windows Command Prompt
+curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.cmd -o "%TEMP%\install-cloudcli-windows.cmd" && "%TEMP%\install-cloudcli-windows.cmd" --insecure
+```
+
+```bash
+# macOS
+curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-mac.sh | bash -s -- --insecure
+```
+
+These download and execute code that nothing has authenticated. Read the script first if
+the network between you and GitHub is not one you trust.
+
 ## Notes
 
 - Node.js is installed via winget (Windows) or Homebrew (macOS) when available, otherwise
