@@ -85,12 +85,7 @@ if defined CA_FILE set "NODE_EXTRA_CA_CERTS=%CA_FILE%"
 if defined INSECURE set "NPM_TLS_OPT=--strict-ssl=false"
 if defined INSECURE set "NODE_TLS_REJECT_UNAUTHORIZED=0"
 
-if defined INSECURE (
-    call :warn "--insecure: TLS certificate verification is DISABLED for every download below."
-    call :warn "Anything on the network path can substitute what gets downloaded and then run."
-    call :warn "Prefer --cacert with your proxy's root CA. Continuing in 5 seconds..."
-    timeout /t 5 >nul 2>&1
-)
+if defined INSECURE call :warn "--insecure: TLS certificate verification is DISABLED for every download below."
 if defined CA_FILE call :info "Verifying TLS against extra CA: %CA_FILE%"
 
 rem `net session` only succeeds when the console is elevated.
@@ -231,7 +226,6 @@ if errorlevel 1 (
 )
 
 call :info "Done! %CLOUDCLI_PACKAGE% is installed."
-if defined INSECURE call :warn "Reminder: this run skipped TLS verification. Nothing was verified as authentic."
 if defined CA_FILE call :info "Tip: set NODE_EXTRA_CA_CERTS to that CA permanently so npm keeps working."
 goto :done
 

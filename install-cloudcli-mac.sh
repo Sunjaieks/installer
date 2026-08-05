@@ -114,9 +114,6 @@ tls_hint() {
 
 if [ "$insecure" = 1 ]; then
     warn "--insecure: TLS certificate verification is DISABLED for every download below."
-    warn "Anything on the network path can substitute what gets downloaded and then run."
-    warn "Prefer --cacert with your proxy's root CA. Continuing in 5 seconds..."
-    sleep 5
 fi
 if [ -n "$ca_file" ]; then
     log "Verifying TLS against extra CA: $ca_file"
@@ -233,9 +230,6 @@ if ! npm install -g "$CLOUDCLI_PKG" ${npm_opts[@]+"${npm_opts[@]}"}; then
 fi
 
 log "Done! ${CLOUDCLI_PKG} is installed."
-if [ "$insecure" = 1 ]; then
-    warn "Reminder: this run skipped TLS verification. Nothing was verified as authentic."
-fi
 if [ -n "$ca_file" ]; then
     log "Tip: export NODE_EXTRA_CA_CERTS=$ca_file in your shell profile so npm keeps working."
 fi

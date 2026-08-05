@@ -193,9 +193,6 @@ function Install-CloudCli {
 
     if ($Insecure) {
         Write-WarnMsg "Insecure mode: TLS certificate verification is DISABLED for every download below."
-        Write-WarnMsg "Anything on the network path can substitute what gets downloaded and then run."
-        Write-WarnMsg "Prefer `$env:CLOUDCLI_CACERT with your proxy's root CA. Continuing in 5 seconds..."
-        Start-Sleep -Seconds 5
     }
     if ($CaCert) {
         Write-Info "Verifying TLS against extra CA: $CaCert"
@@ -243,9 +240,6 @@ function Install-CloudCli {
     }
 
     Write-Info "Done! $CloudCliPackage is installed."
-    if ($Insecure) {
-        Write-WarnMsg "Reminder: this run skipped TLS verification. Nothing was verified as authentic."
-    }
     if ($CaCert) {
         Write-Info "Tip: set NODE_EXTRA_CA_CERTS to that CA permanently so npm keeps working: setx NODE_EXTRA_CA_CERTS `"$CaCert`""
     }
