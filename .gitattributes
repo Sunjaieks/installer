@@ -1,0 +1,8 @@
+# cmd.exe parses batch files line by line and mishandles LF-only files around labels and
+# parenthesised blocks. raw.githubusercontent.com serves the stored blob verbatim, so the
+# CRLF has to be in the blob itself -- `text eol=crlf` would store LF and only convert on
+# checkout, which does nothing for anyone curl-ing the raw URL.
+*.cmd -text
+
+*.sh  text eol=lf
+*.ps1 text eol=lf
