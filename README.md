@@ -11,10 +11,10 @@ Each script installs Node.js first if it isn't already present, then installs cl
 curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-mac.sh | bash -s -- --insecure
 ```
 
-**Windows — PowerShell** (recommended)
+**Windows — PowerShell**
 
 ```powershell
-[Net.ServicePointManager]::ServerCertificateValidationCallback = {$true}; $env:CLOUDCLI_INSECURE='1'; irm https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.ps1 | iex
+$env:CLOUDCLI_INSECURE='1'; iex (curl.exe -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.ps1 | Out-String)
 ```
 
 **Windows — Command Prompt**
@@ -26,18 +26,25 @@ curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/m
 Run from an elevated window if Node.js still needs to be installed.
 
 Each command skips TLS certificate verification twice over: once for the download of the
-script itself (`-k`, or the PowerShell callback), and once inside it (`--insecure` /
-`CLOUDCLI_INSECURE`) for the Node.js installer and npm. That is what lets a machine behind
-a TLS-inspecting proxy — one whose root CA is missing from the OS trust store — finish in a
-single command, instead of failing with `SEC_E_UNTRUSTED_ROOT` or "Could not establish
-trust relationship for the SSL/TLS secure channel".
+script itself (`curl -k`), and once inside it (`--insecure` / `CLOUDCLI_INSECURE`) for the
+Node.js installer and npm. That is what lets a machine behind a TLS-inspecting proxy — one
+whose root CA is missing from the OS trust store — finish in a single command, instead of
+failing with `SEC_E_UNTRUSTED_ROOT` or "Could not establish trust relationship for the
+SSL/TLS secure channel".
 
-The trade-off is that nothing downloaded is authenticated. After running the PowerShell
-one, put verification back for the rest of that session:
+The trade-off is that nothing downloaded is authenticated.
 
-```powershell
-[Net.ServicePointManager]::ServerCertificateValidationCallback = $null
-```
+The PowerShell command deliberately fetches with `curl.exe` rather than `irm`, and runs the
+result through `iex` rather than saving a `.ps1`:
+
+- `irm` goes through .NET's HTTP stack, which on a locked-down machine can still fail after
+  the certificate callback is relaxed ("An unexpected error occurred on a send") even with
+  `SecurityProtocol` already set to `Tls12`. `curl.exe` uses schannel and `-k` is enough.
+- `iex` executes a string, so it is not subject to ExecutionPolicy. Saving the script and
+  running it as a file fails with "running scripts is disabled on this system" wherever
+  policy is Restricted.
+- `Out-String` is required: piping `curl.exe` straight into `iex` passes an array of lines,
+  and `iex` would try to execute each line on its own.
 
 ## Notes
 
