@@ -6,8 +6,16 @@
     Usage (download and run directly):
         irm <raw-url-of-this-script> | iex
 
-    or download it first and run locally:
-        powershell -ExecutionPolicy Bypass -File install-cloudcli-windows.ps1
+    Behind a TLS-inspecting proxy whose root CA is not in the Windows trust store,
+    set one of these first. The script deliberately has no param() block, because
+    `irm ... | iex` has no way to pass parameters to it:
+
+        $env:CLOUDCLI_CACERT = 'C:\path\to\proxy-root-ca.pem'   # preferred
+        $env:CLOUDCLI_INSECURE = '1'                            # skips verification entirely
+
+    or download it first and run locally, where arguments do work:
+        powershell -ExecutionPolicy Bypass -File install-cloudcli-windows.ps1 --insecure
+        powershell -ExecutionPolicy Bypass -File install-cloudcli-windows.ps1 --cacert C:\ca.pem
 
     Running from an elevated (Administrator) PowerShell window is recommended in case
     Node.js needs to be installed.
@@ -15,12 +23,19 @@
 
 $ErrorActionPreference = 'Stop'
 
-$CloudCliPackage = '@cloudcli-ai/cloudcli'
-$NodeDistUrl = 'https://nodejs.org/dist/latest-lts/'
+$CloudCliPackage  = '@cloudcli-ai/cloudcli'
+$NodeDistUrl      = 'https://nodejs.org/dist'
+$NodeIndexUrl     = 'https://nodejs.org/dist/index.tab'
+$NodeDownloadPage = 'https://nodejs.org/en/download'
 
 function Write-Info([string]$Message) {
     Write-Host ""
     Write-Host "[cloudcli-installer] $Message" -ForegroundColor Cyan
+}
+
+function Write-WarnMsg([string]$Message) {
+    Write-Host ""
+    Write-Host "[cloudcli-installer] WARNING: $Message" -ForegroundColor Yellow
 }
 
 function Write-ErrorMsg([string]$Message) {
@@ -28,8 +43,138 @@ function Write-ErrorMsg([string]$Message) {
     Write-Host "[cloudcli-installer] ERROR: $Message" -ForegroundColor Red
 }
 
-function Test-CommandExists([string]$Name) {
-    return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
+function Write-TlsHint {
+    Write-WarnMsg "That may be a TLS trust failure rather than a network failure."
+    Write-WarnMsg "If a proxy inspects TLS here, set `$env:CLOUDCLI_CACERT to its root CA (PEM) and re-run."
+    Write-WarnMsg "npm keeps its own CA list, so it needs NODE_EXTRA_CA_CERTS set to that same file."
+    Write-WarnMsg "Or, accepting that nothing gets verified, set `$env:CLOUDCLI_INSECURE = '1'."
+}
+
+# ---------------------------------------------------------------------------
+# Options: environment variables first, then arguments when run as a file.
+# Any non-empty CLOUDCLI_INSECURE enables it, matching the .cmd version.
+# ---------------------------------------------------------------------------
+$Insecure = -not [string]::IsNullOrWhiteSpace($env:CLOUDCLI_INSECURE)
+$CaCert   = $env:CLOUDCLI_CACERT
+
+# Unknown arguments are ignored rather than fatal: under `iex` this runs in the caller's
+# scope, where $args may hold something entirely unrelated to this script.
+for ($i = 0; $i -lt $args.Count; $i++) {
+    switch -Regex ([string]$args[$i]) {
+        '^(--insecure|-insecure|-k)$' { $Insecure = $true }
+        '^(--cacert|-cacert)$'        { if ($i + 1 -lt $args.Count) { $CaCert = [string]$args[++$i] } }
+    }
+}
+
+if ($CaCert -and $Insecure) {
+    Write-WarnMsg "Both a CA file and insecure mode were given. Using the CA file and keeping verification on."
+    $Insecure = $false
+}
+if ($CaCert -and -not (Test-Path -LiteralPath $CaCert)) {
+    Write-ErrorMsg "CA file not found: $CaCert"
+    return
+}
+
+# ---------------------------------------------------------------------------
+# Downloads
+# ---------------------------------------------------------------------------
+
+# NOTE: in Windows PowerShell 5.1 `curl` is an alias for Invoke-WebRequest, so the
+# .exe suffix is required to reach the real binary.
+$CurlExe = Get-Command curl.exe -ErrorAction SilentlyContinue
+
+function Get-RemoteFile([string]$Url, [string]$OutFile) {
+    if ($CurlExe) {
+        # curl handles both TLS options natively and is present on Windows 10 1803+.
+        $curlArgs = @()
+        if ($CaCert)   { $curlArgs += @('--cacert', $CaCert) }
+        if ($Insecure) { $curlArgs += '--insecure' }
+        $curlArgs += @('-fsSL', $Url, '-o', $OutFile)
+
+        & $CurlExe.Source @curlArgs
+        if ($LASTEXITCODE -ne 0) {
+            throw "curl.exe exited with code $LASTEXITCODE while downloading $Url"
+        }
+        return
+    }
+
+    if ($CaCert) {
+        throw ("curl.exe is unavailable, so a CA file cannot be applied to the download. " +
+               "Install the CA into the Windows store instead: certutil -addstore -f Root `"$CaCert`"")
+    }
+
+    $iwr = @{ Uri = $Url; OutFile = $OutFile; UseBasicParsing = $true }
+    if ($Insecure) {
+        if ($PSVersionTable.PSVersion.Major -ge 6) {
+            $iwr['SkipCertificateCheck'] = $true
+        } else {
+            # PowerShell 5.1 has no -SkipCertificateCheck; this is the 5.1-only equivalent.
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+        }
+    }
+    Invoke-WebRequest @iwr
+}
+
+# index.tab is newest-first and tab separated: column 1 is the version and column 10 is
+# the LTS codename, which is "-" for non-LTS releases. So the first row whose column 10
+# is not "-" is the current LTS. (https://nodejs.org/dist/latest-lts/, which this script
+# used to scrape for the installer filename, now returns 404 and made this path fail.)
+function Get-LatestLtsVersion {
+    $indexFile = Join-Path $env:TEMP 'node-dist-index.tab'
+    try {
+        Get-RemoteFile -Url $NodeIndexUrl -OutFile $indexFile
+        foreach ($line in (Get-Content -LiteralPath $indexFile | Select-Object -Skip 1)) {
+            $cols = $line -split "`t"
+            if ($cols.Count -ge 10 -and $cols[9] -ne '-') { return $cols[0] }
+        }
+        return $null
+    } finally {
+        Remove-Item -Force -LiteralPath $indexFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Install-NodeViaWinget {
+    Write-Info "Installing Node.js via winget..."
+    winget install --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget exited with code $LASTEXITCODE"
+    }
+}
+
+function Install-NodeViaMsi([bool]$IsAdmin) {
+    Write-Info "Downloading the official Node.js installer from nodejs.org..."
+    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
+
+    $version = Get-LatestLtsVersion
+    if (-not $version) {
+        throw "Could not determine the latest Node.js LTS version from $NodeIndexUrl"
+    }
+
+    $msiName = "node-$version-$arch.msi"
+    $msiUrl  = "$NodeDistUrl/$version/$msiName"
+    $tmpMsi  = Join-Path $env:TEMP $msiName
+
+    Write-Info "Downloading $msiName..."
+    Get-RemoteFile -Url $msiUrl -OutFile $tmpMsi
+
+    try {
+        # A fully silent (/qn) install cannot raise a UAC prompt, so it only works when
+        # this session is already elevated. Unelevated, /passive shows a progress window
+        # and lets Windows prompt for elevation.
+        if ($IsAdmin) {
+            Write-Info "Installing Node.js silently..."
+            $msiArgs = "/i `"$tmpMsi`" /qn /norestart"
+        } else {
+            Write-Info "Installing Node.js (a UAC prompt may appear)..."
+            $msiArgs = "/i `"$tmpMsi`" /passive /norestart"
+        }
+        $proc = Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArgs -Wait -PassThru
+        if ($proc.ExitCode -ne 0) {
+            throw "msiexec exited with code $($proc.ExitCode), so Node.js was not installed"
+        }
+    } finally {
+        Remove-Item -Force -LiteralPath $tmpMsi -ErrorAction SilentlyContinue
+    }
 }
 
 function Update-SessionPath {
@@ -40,63 +185,96 @@ function Update-SessionPath {
     $env:Path = "$machinePath;$userPath"
 }
 
-function Install-NodeViaWinget {
-    Write-Info "Installing Node.js via winget..."
-    winget install --id OpenJS.NodeJS.LTS -e --silent --accept-source-agreements --accept-package-agreements
-}
-
-function Install-NodeViaMsi {
-    Write-Info "winget not available. Downloading the official Node.js installer from nodejs.org..."
-    $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'x64' }
-
-    $listing = Invoke-WebRequest -UseBasicParsing -Uri $NodeDistUrl
-    $msiName = $listing.Links.href | Where-Object { $_ -match "node-v[\d.]+-$arch\.msi$" } | Select-Object -First 1
-    if (-not $msiName) {
-        Write-ErrorMsg "Could not determine the latest Node.js installer filename."
-        Write-ErrorMsg "Please install Node.js manually from https://nodejs.org/en/download and re-run this script."
-        exit 1
+function Install-CloudCli {
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $isAdmin) {
+        Write-Host "[cloudcli-installer] Note: run this script from an elevated (Administrator) PowerShell window if Node.js needs to be installed." -ForegroundColor Yellow
     }
-    $msiName = [System.IO.Path]::GetFileName($msiName)
-    $msiUrl = "$NodeDistUrl$msiName"
-    $tmpMsi = Join-Path $env:TEMP $msiName
 
-    Write-Info "Downloading $msiName..."
-    Invoke-WebRequest -UseBasicParsing -Uri $msiUrl -OutFile $tmpMsi
-
-    try {
-        Write-Info "Installing Node.js (a UAC prompt may appear)..."
-        Start-Process -FilePath 'msiexec.exe' -ArgumentList "/i `"$tmpMsi`" /qn /norestart" -Wait
-    } finally {
-        Remove-Item -Force $tmpMsi -ErrorAction SilentlyContinue
+    if ($Insecure) {
+        Write-WarnMsg "Insecure mode: TLS certificate verification is DISABLED for every download below."
+        Write-WarnMsg "Anything on the network path can substitute what gets downloaded and then run."
+        Write-WarnMsg "Prefer `$env:CLOUDCLI_CACERT with your proxy's root CA. Continuing in 5 seconds..."
+        Start-Sleep -Seconds 5
     }
-}
+    if ($CaCert) {
+        Write-Info "Verifying TLS against extra CA: $CaCert"
+    }
 
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    Write-Host "[cloudcli-installer] Note: run this script from an elevated (Administrator) PowerShell window if Node.js needs to be installed." -ForegroundColor Yellow
-}
-
-if ((Test-CommandExists 'node') -and (Test-CommandExists 'npm')) {
-    Write-Info "Node.js is already installed ($(node -v)). Skipping Node.js installation."
-} else {
-    Write-Info "Node.js was not found on this machine."
-    if (Test-CommandExists 'winget') {
-        Install-NodeViaWinget
+    if ((Get-Command node -ErrorAction SilentlyContinue) -and (Get-Command npm -ErrorAction SilentlyContinue)) {
+        Write-Info "Node.js is already installed ($(node -v)). Skipping Node.js installation."
     } else {
-        Install-NodeViaMsi
+        Write-Info "Node.js was not found on this machine."
+
+        # winget validates TLS against the Windows store and offers no way to override
+        # that, so when the store is the problem it cannot succeed. Go straight to the
+        # MSI, which we fetch with curl and can point at a CA (or not verify at all).
+        $useWinget = (-not $Insecure) -and (-not $CaCert) -and (Get-Command winget -ErrorAction SilentlyContinue)
+
+        if ($useWinget) {
+            try {
+                Install-NodeViaWinget
+            } catch {
+                Write-WarnMsg "winget could not install Node.js ($($_.Exception.Message)). Falling back to nodejs.org..."
+                Install-NodeViaMsi -IsAdmin $isAdmin
+            }
+        } else {
+            if ($Insecure -or $CaCert) {
+                Write-Info "Skipping winget: it can only verify TLS against the Windows store."
+            }
+            Install-NodeViaMsi -IsAdmin $isAdmin
+        }
+
+        Update-SessionPath
+
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "Node.js installation finished, but 'node' is still not on PATH. Close and reopen PowerShell, then re-run this script."
+        }
+        Write-Info "Node.js installed successfully ($(node -v))."
     }
 
-    Update-SessionPath
+    Write-Info "Installing $CloudCliPackage globally via npm..."
+    $npmArgs = @('install', '-g', $CloudCliPackage)
+    if ($Insecure) { $npmArgs += '--strict-ssl=false' }
 
-    if (-not (Test-CommandExists 'node')) {
-        Write-ErrorMsg "Node.js installation finished, but 'node' is still not on PATH."
-        Write-ErrorMsg "Please close and reopen PowerShell, then re-run this script."
-        exit 1
+    & npm @npmArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw "npm install -g $CloudCliPackage failed with exit code $LASTEXITCODE"
     }
-    Write-Info "Node.js installed successfully ($(node -v))."
+
+    Write-Info "Done! $CloudCliPackage is installed."
+    if ($Insecure) {
+        Write-WarnMsg "Reminder: this run skipped TLS verification. Nothing was verified as authentic."
+    }
+    if ($CaCert) {
+        Write-Info "Tip: set NODE_EXTRA_CA_CERTS to that CA permanently so npm keeps working: setx NODE_EXTRA_CA_CERTS `"$CaCert`""
+    }
 }
 
-Write-Info "Installing $CloudCliPackage globally via npm..."
-npm install -g $CloudCliPackage
+# ---------------------------------------------------------------------------
+# `irm | iex` runs in the caller's own session, so any TLS state this script changes
+# has to be put back, and a failure must not call exit (that would close their shell).
+# ---------------------------------------------------------------------------
+$prevCertCallback = [System.Net.ServicePointManager]::ServerCertificateValidationCallback
+$prevNodeTls      = $env:NODE_TLS_REJECT_UNAUTHORIZED
+$prevNodeExtraCa  = $env:NODE_EXTRA_CA_CERTS
 
-Write-Info "Done! $CloudCliPackage is installed."
+if ($Insecure) { $env:NODE_TLS_REJECT_UNAUTHORIZED = '0' }
+if ($CaCert)   { $env:NODE_EXTRA_CA_CERTS = $CaCert }
+
+$failed = $false
+try {
+    Install-CloudCli
+} catch {
+    $failed = $true
+    Write-ErrorMsg $_.Exception.Message
+    Write-TlsHint
+    Write-ErrorMsg "If Node.js itself is the problem, install it manually from $NodeDownloadPage and re-run this script."
+} finally {
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $prevCertCallback
+    $env:NODE_TLS_REJECT_UNAUTHORIZED = $prevNodeTls
+    $env:NODE_EXTRA_CA_CERTS = $prevNodeExtraCa
+}
+
+# $PSCommandPath is set only when this runs from a file, so `irm | iex` never hits exit.
+if ($failed -and $PSCommandPath) { exit 1 }
