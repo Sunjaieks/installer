@@ -234,7 +234,10 @@ function Install-CloudCli {
     $npmArgs = @('install', '-g', $CloudCliPackage)
     if ($Insecure) { $npmArgs += '--strict-ssl=false' }
 
-    & npm @npmArgs
+    # Node's Windows installer ships three shims (npm, npm.cmd, npm.ps1). A bare `npm`
+    # resolves to npm.ps1 under PowerShell, which then refuses to run under the default
+    # (Restricted) execution policy. npm.cmd has no such gate, so call it explicitly.
+    & npm.cmd @npmArgs
     if ($LASTEXITCODE -ne 0) {
         throw "npm install -g $CloudCliPackage failed with exit code $LASTEXITCODE"
     }
