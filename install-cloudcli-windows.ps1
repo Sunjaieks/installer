@@ -185,6 +185,33 @@ function Update-SessionPath {
     $env:Path = "$machinePath;$userPath"
 }
 
+# Runs npm without letting PowerShell pick one of Node's shims for us.
+#
+# Node's Windows installer drops three shims next to node.exe: npm, npm.cmd and npm.ps1.
+# A bare `npm` resolves to npm.ps1 under PowerShell, which the default (Restricted)
+# execution policy refuses to load. npm.cmd is not policy-gated, but it is a batch shim
+# that first spawns a nested `for /f` node process to resolve the global prefix; that
+# extra console child inherits this console's stdin and can sit there waiting for a
+# keypress instead of returning. Invoking npm's own CLI script with node.exe skips both
+# shims and runs exactly one process.
+#
+# Stdin is closed for the call (`$null |` hands the child an already-ended pipe) because
+# nothing in a global install should ever prompt, so a read from the console can only be
+# a hang. Sets $LASTEXITCODE like any native call; the caller checks it.
+function Invoke-Npm([string[]]$NpmArgs) {
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCmd -and $nodeCmd.Source) {
+        $npmCliJs = Join-Path (Split-Path -Parent $nodeCmd.Source) 'node_modules\npm\bin\npm-cli.js'
+        if (Test-Path -LiteralPath $npmCliJs) {
+            $null | & $nodeCmd.Source $npmCliJs @NpmArgs
+            return
+        }
+    }
+
+    # No bundled npm-cli.js (unusual layout): fall back to the batch shim, never npm.ps1.
+    $null | & npm.cmd @NpmArgs
+}
+
 function Install-CloudCli {
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     if (-not $isAdmin) {
@@ -234,10 +261,7 @@ function Install-CloudCli {
     $npmArgs = @('install', '-g', $CloudCliPackage)
     if ($Insecure) { $npmArgs += '--strict-ssl=false' }
 
-    # Node's Windows installer ships three shims (npm, npm.cmd, npm.ps1). A bare `npm`
-    # resolves to npm.ps1 under PowerShell, which then refuses to run under the default
-    # (Restricted) execution policy. npm.cmd has no such gate, so call it explicitly.
-    & npm.cmd @npmArgs
+    Invoke-Npm -NpmArgs $npmArgs
     if ($LASTEXITCODE -ne 0) {
         throw "npm install -g $CloudCliPackage failed with exit code $LASTEXITCODE"
     }
