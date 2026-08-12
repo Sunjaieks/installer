@@ -159,6 +159,18 @@ latest_lts_version() {
     awk 'NR>1 && $10 != "-" { print $1; exit }' <<< "$index"
 }
 
+# An EXIT trap runs in the global scope, after the function that armed it has already
+# returned, so the directory to clean up cannot be one of that function's `local`s: under
+# `set -u` the expansion aborts the trap, which both leaves the downloaded .pkg behind and
+# makes an otherwise successful run exit non-zero.
+tmp_dir=""
+cleanup() {
+    if [ -n "${tmp_dir:-}" ]; then
+        rm -rf "$tmp_dir"
+    fi
+}
+trap cleanup EXIT
+
 install_node_via_pkg() {
     log "Homebrew not found. Downloading the official Node.js installer from nodejs.org..."
 
@@ -175,9 +187,7 @@ install_node_via_pkg() {
     local pkg_name="node-${version}.pkg"
     local pkg_url="${NODE_DIST_URL}/${version}/${pkg_name}"
 
-    local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT
     local tmp_pkg="$tmp_dir/$pkg_name"
 
     log "Downloading $pkg_name..."
