@@ -250,19 +250,26 @@ goto :eof
 rem ---------------------------------------------------------------------------
 :refresh_path
 rem Installers write the new PATH to the registry, but this console session won't see
-rem the change until we merge it into %PATH% ourselves. `find "REG_"` isolates the value
-rem line of `reg query`, whose 3rd token onwards is the value itself.
+rem the change until we merge it into %PATH% ourselves.
+rem
+rem The nodejs directory goes on first and on its own: it is the only entry this script
+rem actually needs, and it has to land even if the registry merge below yields nothing.
+if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%PATH%;%ProgramFiles%\nodejs"
+rem
+rem The registry copy is then APPENDED, never assigned over %PATH%. `reg query` prints a
+rem REG_EXPAND_SZ value as stored, so PATH comes back as raw `%SystemRoot%\system32` text,
+rem and text substituted out of one variable is not rescanned for further expansion. So
+rem overwriting %PATH% with it left the session holding no real System32 and the very next
+rem `where` failed with "not recognized". Appending keeps the session's own working PATH
+rem as the floor, so an unusable read can only ever add dead entries.
 set "MACHINE_PATH="
 set "USER_PATH="
 for /f "tokens=2,*" %%A in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment" /v Path 2^>nul ^| find "REG_"') do set "MACHINE_PATH=%%B"
 for /f "tokens=2,*" %%A in ('reg query "HKCU\Environment" /v Path 2^>nul ^| find "REG_"') do set "USER_PATH=%%B"
-rem Those are REG_EXPAND_SZ values, so they can contain %SystemRoot%-style references.
 call set "MACHINE_PATH=%%MACHINE_PATH%%"
 call set "USER_PATH=%%USER_PATH%%"
-if defined MACHINE_PATH set "PATH=%MACHINE_PATH%"
+if defined MACHINE_PATH set "PATH=%PATH%;%MACHINE_PATH%"
 if defined USER_PATH set "PATH=%PATH%;%USER_PATH%"
-rem Belt and braces: this is where the Node.js MSI lands even if the registry read failed.
-if exist "%ProgramFiles%\nodejs\node.exe" set "PATH=%PATH%;%ProgramFiles%\nodejs"
 goto :eof
 
 :info

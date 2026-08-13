@@ -180,9 +180,19 @@ function Install-NodeViaMsi([bool]$IsAdmin) {
 function Update-SessionPath {
     # Installers update the Machine/User PATH in the registry, but this PowerShell session
     # won't see the change until we merge it into $env:Path ourselves.
+    #
+    # Append rather than assign over $env:Path. Overwriting means a single empty or failed
+    # read strips System32 from the session and every later native call stops resolving --
+    # exactly how the .cmd version broke, where `where` came back "not recognized". Keeping
+    # the current PATH as the floor makes that impossible, and the nodejs directory is added
+    # directly so it lands even when neither registry value carries it yet.
+    $nodeDir     = Join-Path $env:ProgramFiles 'nodejs'
     $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = "$machinePath;$userPath"
+    $userPath    = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+
+    if (Test-Path -LiteralPath $nodeDir) { $env:Path = "$env:Path;$nodeDir" }
+    if ($machinePath) { $env:Path = "$env:Path;$machinePath" }
+    if ($userPath)    { $env:Path = "$env:Path;$userPath" }
 }
 
 # Runs npm without letting PowerShell pick one of Node's shims for us.
