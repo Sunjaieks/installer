@@ -1,19 +1,19 @@
 @echo off
 rem ============================================================================
-rem  install-cloudcli-windows.cmd
+rem  windows-install.cmd
 rem
 rem  Installs Node.js (if it isn't already installed) and @cloudcli-ai/cloudcli.
 rem
-rem  This is the Command Prompt (cmd.exe) counterpart of install-cloudcli-windows.ps1,
+rem  This is the Command Prompt (cmd.exe) counterpart of windows-install.ps1,
 rem  for people running cmd in Windows Terminal rather than PowerShell. It downloads
 rem  with curl.exe instead of Invoke-WebRequest, so it is unaffected by Windows
 rem  PowerShell 5.1's default TLS protocol setting.
 rem
 rem  Usage:
-rem      install-cloudcli-windows.cmd [--insecure | --cacert <path-to-ca.pem>]
+rem      windows-install.cmd [--insecure | --cacert <path-to-ca.pem>]
 rem
 rem  Download and run directly:
-rem      curl -fsSL <raw-url-of-this-script> -o "%TEMP%\install-cloudcli-windows.cmd" ^&^& "%TEMP%\install-cloudcli-windows.cmd"
+rem      curl -fsSL <raw-url-of-this-script> -o "%TEMP%\windows-install.cmd" ^&^& "%TEMP%\windows-install.cmd"
 rem
 rem  Behind a TLS-inspecting corporate proxy whose root CA is not in the Windows
 rem  trust store, add -k to that curl and pass --cacert (preferred) or --insecure
@@ -43,10 +43,11 @@ if "%~1"=="" goto :args_done
 if /i "%~1"=="--insecure" goto :arg_insecure
 if /i "%~1"=="-k" goto :arg_insecure
 if /i "%~1"=="--cacert" goto :arg_cacert
-if /i "%~1"=="--help" goto :usage
-if /i "%~1"=="/?" goto :usage
+if /i "%~1"=="--help" goto :show_help
+if /i "%~1"=="/?" goto :show_help
 call :err "Unknown option: %~1"
-goto :usage
+call :usage
+goto :fail
 
 :arg_insecure
 set "INSECURE=1"
@@ -279,9 +280,13 @@ echo.
 echo [cloudcli-installer] ERROR: %~1
 goto :eof
 
+:show_help
+call :usage
+goto :done
+
 :usage
 echo.
-echo Usage: install-cloudcli-windows.cmd [--insecure ^| --cacert ^<path-to-ca.pem^>]
+echo Usage: windows-install.cmd [--insecure ^| --cacert ^<path-to-ca.pem^>]
 echo.
 echo   --cacert ^<path^>   Verify TLS against an extra root CA in PEM form, such as a
 echo                     corporate TLS-inspection root. Also exported to npm through
@@ -289,7 +294,7 @@ echo                     NODE_EXTRA_CA_CERTS. This is the preferred option.
 echo   --insecure, -k    Skip TLS verification entirely for every download. Only for
 echo                     a network you trust; nothing downloaded can be authenticated.
 echo.
-goto :fail
+goto :eof
 
 :maybe_pause
 rem Keep the window open when the script was launched by double-clicking it in Explorer.

@@ -8,19 +8,19 @@ Each script installs Node.js first if it isn't already present, then installs cl
 **macOS — Terminal**
 
 ```bash
-curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-mac.sh | bash -s -- --insecure
+curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/cloud-cli/mac-install.sh | bash -s -- --insecure
 ```
 
 **Windows — PowerShell**
 
 ```powershell
-$env:CLOUDCLI_INSECURE='1'; iex (curl.exe -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.ps1 | Out-String)
+$env:CLOUDCLI_INSECURE='1'; iex (curl.exe -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/cloud-cli/windows-install.ps1 | Out-String)
 ```
 
 **Windows — Command Prompt**
 
 ```bat
-curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/install-cloudcli-windows.cmd -o "%TEMP%\install-cloudcli-windows.cmd" && "%TEMP%\install-cloudcli-windows.cmd" --insecure
+curl -k -fsSL https://raw.githubusercontent.com/Sunjaieks/installer/refs/heads/main/cloud-cli/windows-install.cmd -o "%TEMP%\windows-install.cmd" && "%TEMP%\windows-install.cmd" --insecure
 ```
 
 Run from an elevated window if Node.js still needs to be installed.
@@ -57,4 +57,4 @@ result through `iex` rather than saving a `.ps1`:
   `--cacert <path-to-ca.pem>` or set `CLOUDCLI_CACERT`. Run any script with `--help` for
   details. `npm` keeps its own CA list and ignores the OS trust store, so it also needs
   `NODE_EXTRA_CA_CERTS`.
-- `install-cloudcli-windows.cmd` must keep CRLF line endings; see `.gitattributes`.
+- `cloud-cli/windows-install.cmd` must keep CRLF line endings; see `.gitattributes`.

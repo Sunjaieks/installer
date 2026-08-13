@@ -14,8 +14,8 @@
         $env:CLOUDCLI_INSECURE = '1'                            # skips verification entirely
 
     or download it first and run locally, where arguments do work:
-        powershell -ExecutionPolicy Bypass -File install-cloudcli-windows.ps1 --insecure
-        powershell -ExecutionPolicy Bypass -File install-cloudcli-windows.ps1 --cacert C:\ca.pem
+        powershell -ExecutionPolicy Bypass -File windows-install.ps1 --insecure
+        powershell -ExecutionPolicy Bypass -File windows-install.ps1 --cacert C:\ca.pem
 
     Running from an elevated (Administrator) PowerShell window is recommended in case
     Node.js needs to be installed.

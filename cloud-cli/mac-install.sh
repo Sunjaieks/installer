@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-cloudcli-mac.sh
+# mac-install.sh
 #
 # Installs Node.js (if it isn't already installed) and @cloudcli-ai/cloudcli
 #
@@ -12,8 +12,8 @@
 #   curl -fsSL <raw-url-of-this-script> | bash -s -- --insecure
 #
 # or download it first and run locally:
-#   chmod +x install-cloudcli-mac.sh
-#   ./install-cloudcli-mac.sh
+#   chmod +x mac-install.sh
+#   ./mac-install.sh
 #
 set -euo pipefail
 
@@ -29,7 +29,7 @@ err()  { printf '\n\033[1;31m[cloudcli-installer] ERROR:\033[0m %s\n' "$1" >&2; 
 usage() {
     cat >&2 <<'EOF'
 
-Usage: install-cloudcli-mac.sh [--insecure | --cacert <path-to-ca.pem>]
+Usage: mac-install.sh [--insecure | --cacert <path-to-ca.pem>]
 
   --cacert <path>   Verify TLS against an extra root CA in PEM form, such as a
                     corporate TLS-inspection root. Also handed to npm through
